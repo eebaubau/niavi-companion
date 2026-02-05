@@ -44,6 +44,9 @@ class WakeWordEngine {
       const bytesPerFrame = frameLength * 2;
 
       this.recorder.stream().on('data', (chunk) => {
+        // Guard against callbacks after stop()
+        if (!this.porcupine || !this.isRunning) return;
+
         audioBuffer = Buffer.concat([audioBuffer, chunk]);
 
         while (audioBuffer.length >= bytesPerFrame) {
@@ -52,6 +55,9 @@ class WakeWordEngine {
             frame[i] = audioBuffer.readInt16LE(i * 2);
           }
           audioBuffer = audioBuffer.slice(bytesPerFrame);
+
+          // Check again in case stop() was called during processing
+          if (!this.porcupine) return;
 
           const keywordIndex = this.porcupine.process(frame);
           if (keywordIndex >= 0) {
