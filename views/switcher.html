@@ -144,10 +144,14 @@
     let selectedIndex = -1;
 
     window.electronAPI.onAppsData((data) => {
+      console.log('[Niavi Renderer] Received apps data:', data);
       apps = data;
       renderApps();
       startVoiceRecognition();
     });
+
+    // Debug: log when script loads
+    console.log('[Niavi Renderer] Script loaded, waiting for apps data...');
 
     function renderApps() {
       const row = document.getElementById('appsRow');
@@ -299,18 +303,23 @@
                 recognition.start();
               } catch (e) {}
             }, 100);
-        }
-      };
+          }
+        };
 
-      // Delay start to let Porcupine release the mic
-      setTimeout(() => {
-        try {
-          recognition.start();
-          console.log('[Niavi] Voice recognition started');
-        } catch (e) {
-          console.log('[Niavi] Could not start voice recognition:', e);
-        }
-      }, 300);
+        // Delay start to let Porcupine release the mic
+        setTimeout(() => {
+          try {
+            recognition.start();
+            console.log('[Niavi] Voice recognition started');
+          } catch (e) {
+            console.log('[Niavi] Could not start voice recognition:', e);
+          }
+        }, 300);
+
+      } catch (e) {
+        console.log('[Niavi] Could not initialize speech recognition:', e);
+        statusText.textContent = 'Press 1-9 or click to select';
+      }
     }
   </script>
 </body>

@@ -181,6 +181,8 @@ async function openAppSwitcher(onClose) {
     switcherWindow.loadFile(path.join(__dirname, '..', 'views', 'switcher.html'));
 
     switcherWindow.webContents.on('did-finish-load', () => {
+      console.log('[Niavi] Sending apps data to renderer:', appsList.length, 'apps');
+      console.log('[Niavi] Apps:', appsList.map(a => a.name).join(', '));
       switcherWindow.webContents.send('apps-data', appsList);
     });
 
