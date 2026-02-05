@@ -18,8 +18,8 @@ function checkAccessibilityPermission() {
   if (process.platform === 'darwin') {
     const trusted = systemPreferences.isTrustedAccessibilityClient(false);
     if (!trusted) {
-      systemPreferences.isTrustedAccessibilityClient(true);
       console.log('[Niavi] Accessibility permission required for app switching.');
+      console.log('[Niavi] Grant in: System Settings → Privacy & Security → Accessibility');
     }
     return trusted;
   }
@@ -27,38 +27,28 @@ function checkAccessibilityPermission() {
 }
 
 async function getRunningApps() {
-  return new Promise((resolve, reject) => {
-    const script = `
-      tell application "System Events"
-        set appList to {}
-        repeat with proc in (every process whose background only is false)
-          set appName to name of proc
-          try
-            set appPath to POSIX path of (file of proc as alias)
-          on error
-            set appPath to ""
-          end try
-          set end of appList to appName & "|" & appPath
-        end repeat
-        return appList
-      end tell
-    `;
+  return new Promise((resolve) => {
+    const { execFile } = require('child_process');
 
-    exec(`osascript -e '${script.replace(/'/g, "'\"'\"'")}'`, (err, stdout) => {
-      if (err) {
-        reject(err);
-        return;
-      }
+    try {
+      execFile('osascript', ['-e', 'tell application "System Events" to get name of every process whose background only is false'], (err, stdout, stderr) => {
+        if (err) {
+          console.error('[Niavi] Failed to get running apps:', err.message);
+          resolve([]);
+          return;
+        }
 
-      const apps = stdout.trim().split(', ')
-        .map(item => {
-          const [name, appPath] = item.split('|');
-          return { name: name.trim(), path: appPath ? appPath.trim() : '' };
-        })
-        .filter(app => app.name && !SYSTEM_APPS.includes(app.name));
+        const apps = stdout.trim().split(', ')
+          .map(name => ({ name: name.trim(), path: '' }))
+          .filter(app => app.name && !SYSTEM_APPS.includes(app.name));
 
-      resolve(apps);
-    });
+        console.log(`[Niavi] Found ${apps.length} running apps`);
+        resolve(apps);
+      });
+    } catch (err) {
+      console.error('[Niavi] Error executing AppleScript:', err.message);
+      resolve([]);
+    }
   });
 }
 
@@ -78,17 +68,14 @@ async function getAppIcon(appPath, appName) {
 
 async function getAppsWithIcons() {
   const apps = await getRunningApps();
+  console.log('[Niavi] Got apps list, skipping icons for now...');
 
-  const appsWithIcons = await Promise.all(
-    apps.map(async (app, index) => {
-      const icon = await getAppIcon(app.path, app.name);
-      return {
-        ...app,
-        icon,
-        number: index + 1
-      };
-    })
-  );
+  // Skip icon fetching for debugging - just return apps without icons
+  const appsWithIcons = apps.map((appItem, index) => ({
+    ...appItem,
+    icon: null,
+    number: index + 1
+  }));
 
   return appsWithIcons;
 }
@@ -134,84 +121,92 @@ function resetAutoCloseTimer() {
 }
 
 async function openAppSwitcher(onClose) {
-  if (switcherWindow) {
-    switcherWindow.focus();
-    return;
-  }
-
-  checkAccessibilityPermission();
-  onCloseCallback = onClose;
+  console.log('[Niavi] Opening app switcher...');
 
   try {
+    if (switcherWindow) {
+      switcherWindow.focus();
+      return;
+    }
+
+    console.log('[Niavi] Checking accessibility...');
+    checkAccessibilityPermission();
+    onCloseCallback = onClose;
+
+    console.log('[Niavi] Getting running apps...');
     appsList = await getAppsWithIcons();
+
+    console.log(`[Niavi] Found ${appsList.length} apps`);
+    if (appsList.length === 0) {
+      console.log('[Niavi] No apps to show');
+      if (onClose) onClose();
+      return;
+    }
+
+    console.log('[Niavi] Creating window...');
+    const display = screen.getPrimaryDisplay();
+    const { width: screenWidth, height: screenHeight } = display.workAreaSize;
+
+    const appItemWidth = 80;
+    const padding = 24;
+    const windowWidth = Math.min(
+      appsList.length * appItemWidth + padding * 2,
+      screenWidth - 100
+    );
+    const windowHeight = 140;
+
+    const x = Math.round((screenWidth - windowWidth) / 2);
+    const y = Math.round((screenHeight - windowHeight) / 2);
+
+    switcherWindow = new BrowserWindow({
+      width: windowWidth,
+      height: windowHeight,
+      x,
+      y,
+      frame: false,
+      transparent: true,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      resizable: false,
+      focusable: true,
+      hasShadow: true,
+      webPreferences: {
+        preload: path.join(__dirname, 'switcher-preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+      }
+    });
+
+    console.log('[Niavi] Loading switcher HTML...');
+    switcherWindow.loadFile(path.join(__dirname, '..', 'views', 'switcher.html'));
+
+    switcherWindow.webContents.on('did-finish-load', () => {
+      switcherWindow.webContents.send('apps-data', appsList);
+    });
+
+    switcherWindow.on('closed', () => {
+      switcherWindow = null;
+      if (autoCloseTimer) {
+        clearTimeout(autoCloseTimer);
+        autoCloseTimer = null;
+      }
+      if (onCloseCallback) {
+        onCloseCallback();
+        onCloseCallback = null;
+      }
+    });
+
+    switcherWindow.on('blur', () => {
+      closeSwitcher();
+    });
+
+    resetAutoCloseTimer();
+    console.log('[Niavi] App switcher opened');
+
   } catch (err) {
-    console.error('[Niavi] Failed to get running apps:', err);
+    console.error('[Niavi] Error opening app switcher:', err);
     if (onClose) onClose();
-    return;
   }
-
-  if (appsList.length === 0) {
-    console.log('[Niavi] No apps to show');
-    if (onClose) onClose();
-    return;
-  }
-
-  const display = screen.getPrimaryDisplay();
-  const { width: screenWidth, height: screenHeight } = display.workAreaSize;
-
-  const appItemWidth = 80;
-  const padding = 24;
-  const windowWidth = Math.min(
-    appsList.length * appItemWidth + padding * 2,
-    screenWidth - 100
-  );
-  const windowHeight = 140;
-
-  const x = Math.round((screenWidth - windowWidth) / 2);
-  const y = Math.round((screenHeight - windowHeight) / 2);
-
-  switcherWindow = new BrowserWindow({
-    width: windowWidth,
-    height: windowHeight,
-    x,
-    y,
-    frame: false,
-    transparent: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    resizable: false,
-    focusable: true,
-    hasShadow: true,
-    webPreferences: {
-      preload: path.join(__dirname, 'switcher-preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-    }
-  });
-
-  switcherWindow.loadFile(path.join(__dirname, '..', 'views', 'switcher.html'));
-
-  switcherWindow.webContents.on('did-finish-load', () => {
-    switcherWindow.webContents.send('apps-data', appsList);
-  });
-
-  switcherWindow.on('closed', () => {
-    switcherWindow = null;
-    if (autoCloseTimer) {
-      clearTimeout(autoCloseTimer);
-      autoCloseTimer = null;
-    }
-    if (onCloseCallback) {
-      onCloseCallback();
-      onCloseCallback = null;
-    }
-  });
-
-  switcherWindow.on('blur', () => {
-    closeSwitcher();
-  });
-
-  resetAutoCloseTimer();
 }
 
 function setupSwitcherIPC() {

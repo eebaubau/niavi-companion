@@ -229,69 +229,76 @@
     // Voice recognition
     function startVoiceRecognition() {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const statusText = document.getElementById('statusText');
 
       if (!SpeechRecognition) {
-        console.log('[Niavi] Web Speech API not available — use keyboard or click to select.');
+        console.log('[Niavi] Web Speech API not available in Electron — use keyboard (1-9) or click');
+        statusText.textContent = 'Press 1-9 or click to select';
         return;
       }
 
-      const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = false;
-      recognition.lang = 'en-US';
-      recognition.maxAlternatives = 3;
+      try {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'en-US';
+        recognition.maxAlternatives = 3;
 
-      recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript.toLowerCase().trim();
-        console.log('[Niavi] Heard:', transcript);
+        recognition.onresult = (event) => {
+          const transcript = event.results[0][0].transcript.toLowerCase().trim();
+          console.log('[Niavi] Heard:', transcript);
 
-        const numberMap = {
-          'one': 1, 'won': 1, '1': 1,
-          'two': 2, 'to': 2, 'too': 2, '2': 2,
-          'three': 3, 'tree': 3, 'free': 3, '3': 3,
-          'four': 4, 'for': 4, 'fore': 4, '4': 4,
-          'five': 5, '5': 5,
-          'six': 6, 'sicks': 6, '6': 6,
-          'seven': 7, '7': 7,
-          'eight': 8, 'ate': 8, '8': 8,
-          'nine': 9, '9': 9,
+          const numberMap = {
+            'one': 1, 'won': 1, '1': 1,
+            'two': 2, 'to': 2, 'too': 2, '2': 2,
+            'three': 3, 'tree': 3, 'free': 3, '3': 3,
+            'four': 4, 'for': 4, 'fore': 4, '4': 4,
+            'five': 5, '5': 5,
+            'six': 6, 'sicks': 6, '6': 6,
+            'seven': 7, '7': 7,
+            'eight': 8, 'ate': 8, '8': 8,
+            'nine': 9, '9': 9,
+          };
+
+          if (numberMap[transcript]) {
+            selectAppByNumber(numberMap[transcript]);
+            return;
+          }
+
+          // Try to match app names
+          const matchedApp = apps.find(app => {
+            const appNameLower = app.name.toLowerCase();
+            return appNameLower.includes(transcript) || transcript.includes(appNameLower);
+          });
+
+          if (matchedApp) {
+            selectApp(apps.indexOf(matchedApp));
+            return;
+          }
+
+          // No match, restart listening
+          setTimeout(() => recognition.start(), 100);
         };
 
-        if (numberMap[transcript]) {
-          selectAppByNumber(numberMap[transcript]);
-          return;
-        }
+        recognition.onerror = (event) => {
+          console.log('[Niavi] Speech recognition error:', event.error);
+          if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+            statusText.textContent = 'Press 1-9 or click to select';
+            return;
+          }
+          if (event.error !== 'aborted' && event.error !== 'no-speech') {
+            setTimeout(() => recognition.start(), 500);
+          }
+        };
 
-        // Try to match app names
-        const matchedApp = apps.find(app => {
-          const appNameLower = app.name.toLowerCase();
-          return appNameLower.includes(transcript) || transcript.includes(appNameLower);
-        });
-
-        if (matchedApp) {
-          selectApp(apps.indexOf(matchedApp));
-          return;
-        }
-
-        // No match, restart listening
-        setTimeout(() => recognition.start(), 100);
-      };
-
-      recognition.onerror = (event) => {
-        console.log('[Niavi] Speech recognition error:', event.error);
-        if (event.error !== 'aborted' && event.error !== 'no-speech') {
-          setTimeout(() => recognition.start(), 500);
-        }
-      };
-
-      recognition.onend = () => {
-        // Restart if we haven't selected anything
-        if (selectedIndex === -1) {
-          setTimeout(() => {
-            try {
-              recognition.start();
-            } catch (e) {}
-          }, 100);
+        recognition.onend = () => {
+          // Restart if we haven't selected anything
+          if (selectedIndex === -1) {
+            setTimeout(() => {
+              try {
+                recognition.start();
+              } catch (e) {}
+            }, 100);
         }
       };
 
