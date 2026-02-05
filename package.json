@@ -1,0 +1,39 @@
+{
+  "name": "niavi-companion",
+  "version": "1.0.0",
+  "description": "Companion app for Niavi Chrome extension — wake word detection",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:mac": "electron-builder --mac",
+    "build:win": "electron-builder --win",
+    "build": "electron-builder --mac --win"
+  },
+  "build": {
+    "appId": "com.niavi.companion",
+    "productName": "Niavi Companion",
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": "dmg",
+      "icon": "assets/app-icon.icns"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "assets/app-icon.ico"
+    }
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@picovoice/porcupine-node": "^4.0.1",
+    "dotenv": "^17.2.3",
+    "electron": "^34.5.8",
+    "menubar": "^9.5.2",
+    "node-record-lpcm16": "^1.0.1",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "electron-builder": "^26.7.0"
+  }
+}

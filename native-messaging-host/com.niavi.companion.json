@@ -1,0 +1,9 @@
+{
+  "name": "com.niavi.companion",
+  "description": "Niavi Companion native messaging host",
+  "path": "/Applications/Niavi Companion.app/Contents/MacOS/Niavi Companion",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://nnebdbifipedjdcjcjkhoediaoopkkgo/"
+  ]
+}
