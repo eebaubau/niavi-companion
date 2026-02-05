@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: transparent;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    .container {
+      background: rgba(30, 30, 30, 0.92);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    .apps-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+      overflow-x: auto;
+      max-width: 100%;
+    }
+
+    .app-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 8px;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background 0.15s ease;
+      min-width: 72px;
+      position: relative;
+    }
+
+    .app-item:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .app-item.selected {
+      background: rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(100, 149, 237, 0.5);
+    }
+
+    .app-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      color: white;
+      margin-bottom: 6px;
+    }
+
+    .app-icon img {
+      width: 48px;
+      height: 48px;
+      border-radius: 10px;
+    }
+
+    .number-badge {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      background: rgba(0, 0, 0, 0.6);
+      color: white;
+      font-size: 10px;
+      font-weight: 600;
+      width: 16px;
+      height: 16px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .app-name {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.9);
+      text-align: center;
+      max-width: 68px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.6);
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      background: #4CAF50;
+      border-radius: 50%;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .status.switching .status-dot {
+      background: #2196F3;
+      animation: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="apps-row" id="appsRow"></div>
+    <div class="status" id="status">
+      <div class="status-dot"></div>
+      <span id="statusText">Say a number or app name</span>
+    </div>
+  </div>
+
+  <script>
+    let apps = [];
+    let selectedIndex = -1;
+
+    window.electronAPI.onAppsData((data) => {
+      apps = data;
+      renderApps();
+      startVoiceRecognition();
+    });
+
+    function renderApps() {
+      const row = document.getElementById('appsRow');
+      row.innerHTML = '';
+
+      apps.forEach((app, index) => {
+        const item = document.createElement('div');
+        item.className = 'app-item';
+        item.dataset.index = index;
+
+        const badge = document.createElement('div');
+        badge.className = 'number-badge';
+        badge.textContent = app.number;
+
+        const iconDiv = document.createElement('div');
+        iconDiv.className = 'app-icon';
+
+        if (app.icon) {
+          const img = document.createElement('img');
+          img.src = app.icon;
+          img.alt = app.name;
+          iconDiv.appendChild(img);
+        } else {
+          iconDiv.textContent = app.name.charAt(0).toUpperCase();
+        }
+
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'app-name';
+        nameDiv.textContent = app.name;
+
+        item.appendChild(badge);
+        item.appendChild(iconDiv);
+        item.appendChild(nameDiv);
+
+        item.addEventListener('click', () => selectApp(index));
+        row.appendChild(item);
+      });
+    }
+
+    function selectApp(index) {
+      const app = apps[index];
+      if (!app) return;
+
+      selectedIndex = index;
+      document.querySelectorAll('.app-item').forEach((el, i) => {
+        el.classList.toggle('selected', i === index);
+      });
+
+      const status = document.getElementById('status');
+      const statusText = document.getElementById('statusText');
+      status.classList.add('switching');
+      statusText.textContent = `Switching to ${app.name}...`;
+
+      setTimeout(() => {
+        window.electronAPI.selectApp(app.name);
+      }, 200);
+    }
+
+    function selectAppByNumber(num) {
+      const index = num - 1;
+      if (index >= 0 && index < apps.length) {
+        selectApp(index);
+      }
+    }
+
+    // Keyboard support
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        window.electronAPI.closeSwitcher();
+        return;
+      }
+
+      const num = parseInt(e.key);
+      if (num >= 1 && num <= 9) {
+        selectAppByNumber(num);
+      }
+    });
+
+    // Voice recognition
+    function startVoiceRecognition() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+      if (!SpeechRecognition) {
+        console.log('[Niavi] Web Speech API not available — use keyboard or click to select.');
+        return;
+      }
+
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+      recognition.maxAlternatives = 3;
+
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript.toLowerCase().trim();
+        console.log('[Niavi] Heard:', transcript);
+
+        const numberMap = {
+          'one': 1, 'won': 1, '1': 1,
+          'two': 2, 'to': 2, 'too': 2, '2': 2,
+          'three': 3, 'tree': 3, 'free': 3, '3': 3,
+          'four': 4, 'for': 4, 'fore': 4, '4': 4,
+          'five': 5, '5': 5,
+          'six': 6, 'sicks': 6, '6': 6,
+          'seven': 7, '7': 7,
+          'eight': 8, 'ate': 8, '8': 8,
+          'nine': 9, '9': 9,
+        };
+
+        if (numberMap[transcript]) {
+          selectAppByNumber(numberMap[transcript]);
+          return;
+        }
+
+        // Try to match app names
+        const matchedApp = apps.find(app => {
+          const appNameLower = app.name.toLowerCase();
+          return appNameLower.includes(transcript) || transcript.includes(appNameLower);
+        });
+
+        if (matchedApp) {
+          selectApp(apps.indexOf(matchedApp));
+          return;
+        }
+
+        // No match, restart listening
+        setTimeout(() => recognition.start(), 100);
+      };
+
+      recognition.onerror = (event) => {
+        console.log('[Niavi] Speech recognition error:', event.error);
+        if (event.error !== 'aborted' && event.error !== 'no-speech') {
+          setTimeout(() => recognition.start(), 500);
+        }
+      };
+
+      recognition.onend = () => {
+        // Restart if we haven't selected anything
+        if (selectedIndex === -1) {
+          setTimeout(() => {
+            try {
+              recognition.start();
+            } catch (e) {}
+          }, 100);
+        }
+      };
+
+      // Delay start to let Porcupine release the mic
+      setTimeout(() => {
+        try {
+          recognition.start();
+          console.log('[Niavi] Voice recognition started');
+        } catch (e) {
+          console.log('[Niavi] Could not start voice recognition:', e);
+        }
+      }, 300);
+    }
+  </script>
+</body>
+</html>
